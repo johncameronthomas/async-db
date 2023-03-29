@@ -5,8 +5,8 @@ from queue import Queue
 class Database:
     def __init__(self, path):
         self.path = path
-        self.running = False
-        self.queue = Queue(maxsize=20)
+        self.task_performer = threading.Thread(target=self.perform_tasks)
+        self.tasks = Queue(maxsize=20)
         try:
             open(self.path, 'x').close()
             f = open(self.path, 'w')
@@ -15,34 +15,31 @@ class Database:
         except:
             pass
 
-    def read_json(self):
+    def read_file(self):
         f = open(self.path, 'r')
         data = json.load(f)
         f.close()
         return data
 
-    def write_json(self, data):
+    def write_file(self, data):
         f = open(self.path, 'w')
         json.dump(data, f)
         f.close()
 
-    def perform_actions(self):
+    def perform_tasks(self):
         while True:
-            action = self.queue.get()
-            command, arg, result = action
-            if command == 'quit':
-                return
-            data = self.read_json()
+            task = self.tasks.get()
+            command, arg, result = task
+            data = self.read_file()
             match command:
                 case 0: # dump
                     result.put(data)
                 case 1: # read
-                    keys = arg
-                    for key in keys:
+                    for key in arg:
                         data = data[key]
                     result.put(data)
                 case 2: # initialize
-                    self.write_json(arg)
+                    self.write_file(arg)
                     result.put(None)
                 case 3: # write
                     value, keys = arg[0], arg[1]
@@ -51,51 +48,59 @@ class Database:
                         exec_str += "['{}']".format(key)
                     exec_str += '=value'
                     exec(exec_str)
-                    self.write_json(data)
+                    self.write_file(data)
                     result.put(None)
                 case 4: # clear
-                    self.write_json({})
+                    self.write_file({})
                     result.put(None)
                 case 5: # remove
-                    keys = arg
                     exec_str = 'data'
-                    for key in keys[0:-1]:
+                    for key in arg[0:-1]:
                         exec_str += "['{}']".format(key)
-                    exec_str += '.pop(keys[-1])'
+                    exec_str += '.pop(arg[-1])'
                     exec(exec_str)
-                    self.write_json(data)
+                    self.write_file(data)
                     result.put(None)
-
-    def perform_action(self, command, arg):
-        if self.running:
-            action = [command, arg, Queue(maxsize=1)]
-            self.queue.put(action)
-            return action[2].get()
+                case 6: # quit
+                    result.put(None)
+                    return
+                
+    def perform_task(self, command, arg):
+        if self.task_performer.is_alive():
+            task = (command, arg, Queue(maxsize=1))
+            self.tasks.put(task)
+            return task[2].get()
+        else:
+            raise ValueError()
+                
+    def start(self):
+        if not self.task_performer.is_alive():
+            self.task_performer = threading.Thread(target=self.perform_tasks)
+            self.task_performer.start()
         else:
             raise ValueError()
 
-    def start(self):
-        threading.Thread(target=self.perform_actions).start()
-        self.running = True
-
     def stop(self):
-        self.running = False
-        self.queue.put(['quit', None, None])
-
+        if self.task_performer.is_alive():
+            self.perform_task(6, None)
+            self.task_performer.join()
+        else:
+            raise ValueError()
+        
     def dump(self):
-        return self.perform_action(0, None)
+        return self.perform_task(0, None)
 
     def read(self, *keys):
-        return self.perform_action(1, keys)
+        return self.perform_task(1, keys)
     
     def initialize(self, value):
-        return self.perform_action(2, value)
+        return self.perform_task(2, value)
 
     def write(self, value, *keys):
-        return self.perform_action(3, (value, keys))
+        return self.perform_task(3, (value, keys))
 
     def clear(self):
-        return self.perform_action(4, None)
+        return self.perform_task(4, None)
 
     def remove(self, *keys):
-        return self.perform_action(5, keys)
+        return self.perform_task(5, keys)
