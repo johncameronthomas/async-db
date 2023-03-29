@@ -64,7 +64,7 @@ class Database:
                 case 6: # quit
                     result.put(None)
                     return
-                
+
     def perform_task(self, command, arg):
         if self.task_performer.is_alive():
             task = (command, arg, Queue(maxsize=1))
@@ -72,7 +72,7 @@ class Database:
             return task[2].get()
         else:
             raise ValueError()
-                
+
     def start(self):
         if not self.task_performer.is_alive():
             self.task_performer = threading.Thread(target=self.perform_tasks)
@@ -86,13 +86,13 @@ class Database:
             self.task_performer.join()
         else:
             raise ValueError()
-        
+
     def dump(self):
         return self.perform_task(0, None)
 
     def read(self, *keys):
         return self.perform_task(1, keys)
-    
+
     def initialize(self, value):
         return self.perform_task(2, value)
 
